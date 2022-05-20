@@ -1,0 +1,208 @@
+---
+title: "Chi_Test"
+author: "Paul Marie"
+date: '2022-04-10'
+output: html_document
+---
+
+<style>
+#TOC {
+  color: #000000;
+  font-family: Open Sans;
+  font-size: 20px;
+}
+#header {
+  color: #000000;
+  background-color: #F5F5F5;
+  font-family: Open Sans;
+  font-size: 20px;
+}
+#h4.author {
+  color: #008000;
+  font-family: Open Sans;
+}
+#h4.date {
+  color: #000000;
+  font-family: Open Sans;
+}
+body {
+  color: #000000;
+  font-family: Open Sans;
+  background-color: #F5F5F5;
+  font-size: 16px;
+}
+pre {
+  color: #000000;
+  background-color: #f8f8ff;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Paul Marie MWENI** : 
+- Chi-square
+- Markdown Design
+
+```{r set, message=FALSE, warning=FALSE}
+library(foreign)
+library(ggplot2)
+library(psych)
+library(viridis)
+library(hrbrthemes)
+library(corrplot)
+library(sjPlot)
+library(kableExtra)
+library(car)
+library(stats)
+library(DescTools)
+library(Rcpp)
+library(sjstats)
+library(rstatix)
+library(effsize)
+library(plyr)
+library(dplyr)
+library("wesanderson")
+```
+*To start analyzing our data, we first loaded data from the European Social Survey (EES9-2018) for Poland.*
+```{r import-survey, message=FALSE, warning=FALSE}
+ersur <- read.spss("ESS9PL.sav", use.value.labels = TRUE, to.data.frame = TRUE)
+
+levels(ersur$prtvtdpl)[levels(ersur$prtvtdpl)=="Prawo i SprawiedliwoЕ›Д‡"] <- "Prawo i Sprawiedliwosc" #important correction for PCs with Russian language as the main language of an operating system, because R may convert symbols into unreadable ones
+```
+
+## Chi-square test
+
+In this section we want to explore whether PRRP and non-PRRP voters in Poland have significantly different attitudes towards immigrants (**RQ2**). As we mentioned in the first part of our project, Kehrberg (2015) states that PRRP voters consider the increase in unemployment as a consequence of immigration. This leads PRRP voters to have negative attitudes towards migrants and migration as a whole. Thus, we want to assert whether PRRP voters in Poland have a negative attitude towards immigration and whether their attitude is significantly different from that of non-PRRP voters. 
+
+Three variables in the European Social Survey measure respondents' attitudes towards immigrants in general (whether they are of the same race or not, whether they come from poor countries or not, etc.): immigration is good or bad for a country's economy, a country's cultural life is undermined or enriched by immigrants, and immigrants make a country a more or less pleasant place to live. As Kehrberg (2015) mentioned, the different attitudes of PRRP voters (or any individual) are not mutually exclusive. An individual may perceive immigration as bad for the economy, but at the same time they may see immigration as adding value to the culture of the country.  Thus, the different measures of immigration need to be weighted in order to have a good understanding of a respondent's attitude about immigration.
+
+**Research Hypothesis**
+
+Based on what has been said above, we expect that PRRP voters in Poland have a more negative attitude towards immigration compared to non-PRRP voters.
+
+- **H1:** PRRP voters have a different attitude towards immigration than non-PRRP voters.
+- **H2:** PRRP voters have a negative attitude towards immigration.
+
+**Statistical Hypothesis**
+
+- **H0:** There is no association between voter type (PRRP or non-PRRP) and attitude towards immigration.
+- **H1:** There is an association between voter type and attitude towards immigration.
+
+
+### Data for analysis
+
+Here we select the variables needed to run our test. 
+
+
+```{r message=FALSE, warning=FALSE}
+df <- ersur %>%
+  select(imbgeco, imwbcnt, prtvtdpl, lrscale, imueclt) %>%
+  filter(!is.na(imbgeco), !is.na(imwbcnt), !is.na(prtvtdpl), !is.na(imueclt ))
+
+
+df$prtvtdpl <- as.character(df$prtvtdpl)
+df$imbgeco_2 <- as.numeric(df$imbgeco) - 1 
+df$imwbcnt_2 <- as.numeric(df$imwbcnt) - 1
+df$imueclt_2 <- as.numeric(df$imueclt) - 1
+
+Label <- c("imbgeco", "imwbcnt", "imueclt", "prtvtdpl")
+
+Meaning <- c("immigration is good or bad for a country's economy", " Immigrants make country worse or better place to live", "Country's cultural life undermined or enriched by immigrants", "Party voted for in last national election, Poland")
+
+Level_Of_Measurement <- c("(Quasi-)Interval", "(Quasi-)Interval", "(Quasi-)Interval", "Nominal")
+
+R_Data_Type <- c(class(df$imbgeco_2 ), class(df$imwbcnt_2), class(df$imueclt_2), class(df$prtvtdpl))
+
+df_val <- data.frame(Label, Meaning, Level_Of_Measurement, R_Data_Type, stringsAsFactors = FALSE)  
+
+kable(df_val) %>% 
+  kable_styling(bootstrap_options=c("bordered", "responsive","striped"), full_width = FALSE)  
+```
+
+
+
+### Describing Variables
+
+* We grouped the different parties that respondents voted for in the last elections - **Prtvtdpl** - into two factors, PRRP and Non-PRRP. According to Cordero, Zagórski and Rama (2021), the PRRP has three ideological characteristics: nativism, authoritarianism and populism. We looked for parties with the same characteristics in Poland. Three of them fulfilled these characteristics: Kukiz'15, Prawo i Sprawiedliwosc, KORWiN
+
+* As mentioned above, we need to weight the three immigration measures to get a good estimate of respondents' attitudes towards immigration. We have considered individuals in positions between 1 and 3 as 'bad', individuals in positions between 4 and 6 as 'neither bad nor good', and individuals in positions between 7 and 10 as 'good'. People with two or three "bad" ratings are considered to have a negative attitude towards immigration. People with two or three "Good" are considered to have a good attitude towards immigration, and the rest are considered to have a neutral attitude towards immigration.
+
+
+```{r}
+# Creating two factors
+df$prtvtdpl_2 <- if_else(df$prtvtdpl %in% c("Kukiz'15", "Prawo i Sprawiedliwosc", "KORWiN"), "PRRP", "Non PRRP")
+
+# Weighting of the three immigration measurements.
+
+df$imbgeco_3 <- if_else(df$imbgeco_2 %in% c(0,1,3), "Bad", if_else(df$imbgeco %in% c(4,5,6), "Neither Bad or Good", "Good"))
+df$imwbcnt_3 <- if_else(df$imwbcnt_2 %in% c(0,1,3), "Bad", if_else(df$imwbcnt_2 %in% c(4,5,6), "Neither Bad or Good", "Good"))
+df$imueclt_3 <- if_else(df$imueclt_2 %in% c(0,1,3), "Bad", if_else(df$imueclt_2 %in% c(4,5,6), "Neither Bad or Good", "Good"))
+
+nt <- df %>%
+  select(imueclt_3, imwbcnt_3, imbgeco_3) %>%
+  mutate(
+   atim <- case_when(
+  df$imbgeco_3 == 'Bad'& (df$imwbcnt_3 == 'Bad'|df$imueclt_3 == 'Bad') ~ "Negative",
+  df$imwbcnt_3 == 'Bad' & df$imueclt == 'Bad' ~ "Negative",
+  df$imbgeco_3 == 'Good'& (df$imwbcnt_3 == 'Good'|df$imueclt_3 == 'Good') ~ "Positive",
+  df$imwbcnt_3 == 'Good' & df$imueclt_3 == 'Good' ~ "Positive",
+  TRUE ~ "Neutral"
+)
+  )
+
+#atim for attitude toward immigration
+
+df$atim <- nt$`atim <- ...`
+kable(table(df$prtvtdpl_2,df$atim))%>% 
+  kable_styling(bootstrap_options=c("bordered", "responsive","striped"), full_width = FALSE)
+
+```
+**Result:** As we can see, more PRRP voters (35) have a negative attitude towards immigration than non-PRRP voters (10). Similarly, there are more non-PRP voters (170) who have a good attitude towards immigration than PRP voters (132).
+
+Now, Let's visualize the distribution of type of voters and their attitude towards immigration.
+
+### Plots
+```{r graph-setup, message=FALSE, warning=FALSE, include= F}
+knitr::opts_chunk$set(fig.align = 'center', echo = TRUE)
+
+```
+
+```{r}
+plot_xtab(df$atim, df$prtvtdpl_2, margin = "row", bar.pos = "stack",
+         show.summary = F, title = "Figure.1 Attitudes of PRRP and Non PRRP voters towards immigration", legend.title = 'Party voted for in last national election, Poland' ) + scale_fill_manual(values = wes_palette(n=3, name="GrandBudapest2")) + xlab("Attitudes towards immigration")
+```
+
+**Result:** As we can see from the graph, there are many more PRRP voters with a negative attitude towards immigration than non-PRRP voters, and many PRRP voters have a neutral opinion compared to non-PRRP voters. But there are many non-PRRP voters who have a positive attitude towards immigration compared to non-PRRP voters. This seems to confirm our two research hypotheses. But for now, we can't confirm if the perceived difference in attitude is statistically significant. 
+
+### Chi-square
+
+To argue that Prr and non-Prr parties have significant different attitudes towards immigration, we need to perform a chi-square test. Since voter type (prtvtdpl_2) and attitude towards immigration (atim) are categorical variables, the chi-square test is the appropriate test to confirm or reject our statistical hypothesis. 
+```{r}
+chisq.test(df$prtvtdpl_2, df$atim)
+```
+**Results:** Based on the Chi-square test, there is a statistical association between the type of voters and the attitude towards immigration, X(2) = 24.25, p = 5.422e-06. It means that PRRP voters have different attitudes towards immigration than Non-PRRP voters.Thus we reject our **null hypothesis**. 
+
+### The assumption
+One of the assumptions for considering chi-squared reliable is that there should be no expected observation less than 5. So let's check the expected observations to say that the chi-square result is reliable.
+```{r}
+Xtest <- chisq.test(df$prtvtdpl_2, df$atim)
+kable(Xtest$expected) %>% 
+kable_styling(bootstrap_options=c("bordered", "responsive","striped"), full_width = FALSE)
+```
+**Result:** We can see that all expected observations are greater than 5. So the chi-square results are reliable for our case.
+
+### The effect size
+As the test is statistically significant, we need to inspect the standardised residuals to define the effect size.
+```{r}
+kable(Xtest$stdres) %>% 
+kable_styling(bootstrap_options=c("bordered", "responsive","striped"), full_width = FALSE)
+```
+```{r message=FALSE, warning=FALSE}
+corrplot(Xtest$stdres, is.cor = FALSE) + theme_ipsum()
+```
+**Result:** There are many more non-PRRP voters who have a positive attitude towards immigration than would be expected if the two variables were independent. On the other hand, far many PRRP voters have a negative attitude towards immigration than would be expected if the two variables were independent.
+
+### Overall conclusions for the Chi-square test
+In this section we test our research question - **RQ 2:** Is there a difference in attitude towards immigrants between PRRP and non-PRRP voters in Poland?. On the basis of the statistical test (chi-square test) we can confirm that PRRP voters have a significantly different attitude towards immigration than non-PRRP voters. This confirms our first research hypothesis. Furthermore, by analysing the standardised residuals of our statistical test, we could perceive that there are significantly many PRRP voters with a negative attitude towards immigration than would be expected if the two variables - type of voters and attitude towards immigration - were independent. This confirms our second research hypothesis. In short, on the basis of chi-square, we reject our null statistical hypothesis. We found a significant association between the type of voters and their attitudes towards immigration.
