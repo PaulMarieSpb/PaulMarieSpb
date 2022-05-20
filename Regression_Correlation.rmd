@@ -1,0 +1,860 @@
+---
+title: "Project_3"
+author: "50 Shades of Data"
+date: '2022-05-13'
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{=html}
+<style>
+#TOC {
+  color: #000000;
+  font-family: Open Sans;
+  font-size: 20px;
+}
+#header {
+  color: #000000;
+  background-color: #F5F5F5;
+  font-family: Open Sans;
+  font-size: 20px;
+}
+#h4.author {
+  color: #008000;
+  font-family: Open Sans;
+}
+#h4.date {
+  color: #000000;
+  font-family: Open Sans;
+}
+body {
+  color: #000000;
+  font-family: Open Sans;
+  background-color: #F5F5F5;
+  font-size: 16px;
+}
+pre {
+  color: #000000;
+  background-color: #f8f8ff;
+}
+</style>
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+#Install these packages before knitting the file
+library(foreign)
+library(tidyverse)
+library(psych)
+library(ggplot2)
+library(car)
+library(sjPlot)
+library(cowplot)
+library(kableExtra)
+library(ggfortify)
+library(broom)
+library(wesanderson)
+library(vtable)
+```
+- **Ian Talia**: Correlation analysis;
+- **Paul Mari Mweni**: Regression analysis.
+
+
+*To start analyzing our data, we first loaded data from the European
+Social Survey (EES9-2018) for Poland.*
+
+```{r import-survey, message=FALSE, warning=FALSE}
+ersur <- read.spss("ESS9PL.sav", use.value.labels = TRUE, to.data.frame = TRUE)
+
+levels(ersur$prtvtdpl)[levels(ersur$prtvtdpl)=="Prawo i SprawiedliwoЕ›Д‡"] <- "Prawo i Sprawiedliwosc" #important correction for PCs with Russian language as the main language of an operating system, because R may convert symbols into unreadable ones
+```
+
+# Correlation and Linear Regression analysis {.tabset .tabset-pills}
+
+## Small Introduction
+We continue to work with themes on attitudes towards immigrants and homosexuals in Poland in relation to politics (namely, placement of left-right scale and being a voter for populist radical right
+parties), however, this time we want to slightly change the scale and work with the dataset of the whole Poland respondents. The reason is explained slightly further, in the "Regression analysis" part. This time we want to present both regression and correlation analyses — one of the most powerful means of statistics! The regression analysis goes first as it already contains small correlation analysis (just look at the section), and we want to use the conclusions from the huge correlation analysis to inspire our further projects!
+
+## Regression analysis (goes first)
+
+In this project we want to predict the position on the left-right scale
+of Polish respondents. In the previous projects we have shown that there
+was a significant difference between Polish populist radical right
+parties (PRRP) voters and others on their attitude towards immigration
+and religiosity. Even if the results were significant, we could not
+exclude the possibility that third parties, such as socio-demographic
+variables, had an influence on the results. Furthermore, these results
+do not yet help us to predict PRRP voters' personality based on their attitudes. To
+fill these gaps, we will use a linear regression analysis in this
+section.
+
+Radical right-wingers and voters of the populist radical right parties
+have a different attitude towards immigration and gay marriage than
+other voters. They hold anti-immigration and anti-gays/Lesbians
+positions. But it is worth referring to the work of Inglehart et al
+(2017) who consider the acceptance of sexual minorities as an
+independent subset of postmaterial values - called 'individual choice
+norms' - capable of following its own trajectory differently from the
+rest of postmaterial values. For example, a country or individuals can
+have a negative attitude towards immigration while having a neutral or
+positive attitude towards sexual minorities.
+
+While previous papers (which we had the opportunity to read), focused
+only on the difference - often in terms of means - between PRRP voters
+and PRRP non-voters on the basis of different variables, in this project
+we will analyse whether attitudes towards immigration and sexual
+minorities are both predictors of a Polish subjective placement on the
+right-left scale.
+
+**Research Hypothesis**
+
+Based on Kehrberg (2015) we expect there to be a relationship between
+the ranking of individuals on the left-right scale and individuals'
+attitudes towards immigration and sexual minorities.
+
+In our model, we include age, and education as control variables.
+Kehrberg (2015) and Cordero et al. (2021) have shown that people with
+low levels of education are more likely to support radical right-wing
+populist parties and thus, we assume, to be on the right side of the
+left-right scale. When it comes to age, experts on the populist radical
+right and on immigration have different views. The former argue that
+young people are more likely to support the PRRP, and the latter argue
+that older people are more conservative and therefore have a negative
+attitude towards immigration. Kehrberg (2015).
+
+In addition, for our own purposes, we added a predictor that will help
+us to verify if to voters of populist radical right parties define
+themselves as right-winger or not.
+
+Hence: 1. H1: Poles who ranked on the left/right scale have more
+positive economic and cultural attitudes towards immigration than Poles
+who ranked on the right-hand side of the scale. 2. H2: Poles who ranked
+on the left of the left/right scale have more positive attitudes towards
+sexual minorities than Poles who ranked on the right of the scale. 3.
+H3: Poles on the right of the left/right scale have a lower level of
+education than Poles on the left. 4. H4: Poles on the right of the
+left/right scale tend to vote for radical right-wing populist parties
+than Poles on the left of the scale who tend to vote for non-populist
+radical right parties.
+
+```{r cars, message=FALSE, warning=FALSE}
+df <- ersur %>% select(lrscale,  prtvtdpl, imbgeco, imwbcnt, imueclt, freehms, gndr, agea, eisced) %>% 
+  filter(!is.na(lrscale), !is.na(prtvtdpl), !is.na(imwbcnt), !is.na(imueclt), !is.na(imbgeco), !is.na(gndr), !is.na(agea), !is.na(eisced))
+```
+
+```{r graph-setup, include = FALSE}
+knitr::opts_chunk$set(fig.align = 'center', echo = TRUE)
+```
+
+### Data for analysis
+
+Here we select the variables needed to run our test.
+
+```{r message=FALSE, warning=FALSE}
+df$lrscale_1 <- as.numeric(df$lrscale) - 1
+df$prtvtdpl_2 <- if_else(df$prtvtdpl %in% c("Kukiz'15", "Prawo i Sprawiedliwosc", "KORWiN"), "PRRP", "Non PRRP")
+df$imbgeco_2 <- as.numeric(df$imbgeco) - 1 
+df$imwbcnt_2 <- as.numeric(df$imwbcnt) - 1
+df$imueclt_2 <- as.numeric(df$imueclt) - 1
+df$agea_1 <- as.numeric(as.character(df$agea))
+
+df$eisced_1 <- case_when(df$eisced == "Not possible to harmonise into ES-ISCED " | df$eisced == "ES-ISCED I , less than lower secondary" | df$eisced == "ES-ISCED IIIb, lower tier upper secondary" | df$eisced == "ES-ISCED II, lower secondary" ~ " Primary or Lower Secondary", df$eisced == "ES-ISCED IIIa, upper tier upper secondary" |df$eisced == "ES-ISCED IV, advanced vocational, sub-degree" ~ "Higher Secondary", TRUE ~ "University")
+df$fee <-  case_when(df$freehms == "Agree strongly" | df$freehms ==  "Agree" ~ "Positive", df$freehms == "Disagree" | df$freehms == "Disagree strongly" ~ "Negative",
+  TRUE ~ "Neutral")
+
+df <- df %>% rename(
+  "Placement left/right scale" = lrscale_1,
+  "Gay/Lesbian attitudes" = fee,
+  Age = agea_1,
+  "Immigration - Economics" = imbgeco_2,
+  "Immigration - Culture" = imueclt_2,
+  Education = eisced_1,
+  Party_Voted =prtvtdpl_2,
+  )
+
+
+Label <- c("Placement left/right scale","Immigration - Economics", "Immigration - Culture", "Gay/Lesbian attitudes", "Age", "Education", "Party_Voted")
+
+Meaning <- c("Placement on left right scale","immigration is good or bad for a country's economy","Country's cultural life undermined or enriched by immigrants","Gays and lesbians free to live life as they wish","Age of respondent, calculated", "Highest level of education, ES - ISCED" ,"Party voted for in last national election, Poland")
+
+Level_Of_Measurement <- c("(Quasi-)Interval","(Quasi-)Interval", "(Quasi-)Interval", "Ordinal", "Ratio", "Ordinal", "Nominal (binary)")
+
+R_Data_Type <- c(class(df$`Placement left/right scale`),class(df$`Immigration - Economics` ), class(df$`Immigration - Culture`), class(df$`Gay/Lesbian attitudes`), class(df$Age), class(df$Education), class(df$Party_Voted))
+
+df_val <- data.frame(Label, Meaning, Level_Of_Measurement, R_Data_Type, stringsAsFactors = FALSE)  
+
+kable(df_val) %>% 
+  kable_styling(bootstrap_options=c("bordered", "responsive","striped"), full_width = FALSE)  
+
+```
+
+### Describing Variables
+
+-   The placement on the left/right scale ranges from 0: fully left to
+    10: fully right.
+
+-   To analyse whether immigration is a predictor of individual
+    subjective position on the left-right scale, we selected two
+    variables from the European Social Survey (Ess) that measure
+    respondents' economic and cultural attitudes towards immigration.
+    Our choice of variables is based on Kehrberg (2015) who stated that
+    an individual can have different economic and cultural attitudes
+    towards immigrants.
+
+-   In order to use the attitude towards gays and lesbians as a
+    predictor of the position on the left-right scale, we selected a
+    variable in the test that measures the attitude towards the freedom
+    of gays and lesbians in Poland. We consider it a good variable to
+    capture one's attitude towards sexual minorities.
+
+-   We grouped the different parties that respondents voted for in the
+    last elections - **Party Voted** into two factors, PRRP and
+    Non-PRRP. According to Cordero, Zagórski and Rama (2021), the PRRP
+    has three ideological characteristics: nativism, authoritarianism
+    and populism. We looked for parties with the same characteristics in
+    Poland. Three of them fulfilled these characteristics: Kukiz'15,
+    Prawo i Sprawiedliwosc, KORWiN
+
+-   We group the different levels of education presented in the variable
+    "Highest level of education, ES - ISCED" of the European Social
+    Survey into three categories - primary and lower secondary, upper
+    secondary, university - This will help us to interpret our model
+    more easily.
+
+#### Descriptive statistics of our variables.
+
+```{r message=FALSE, warning=FALSE}
+vdf <- df %>% select(`Placement left/right scale`, `Gay/Lesbian attitudes`, Age, `Immigration - Economics`, `Immigration - Culture`, Education, Party_Voted)
+sumtable(vdf, out = 'kable') %>% 
+  kable_styling(bootstrap_options=c("bordered", "responsive","striped"), full_width = FALSE)
+
+```
+
+**Important Comments:**
+
+-   There are 675 respondents in our data set.
+
+-   The mean of 5.867 and the standard deviation of 2.67 on the
+    left/right placement scale may suggest that many Poles consider
+    themselves centrists.
+
+-   56.6% of Poles surveyed have a positive attitude towards the freedom
+    of gays and lesbians in Poland.
+
+-   Attitudes towards immigration, both economic and cultural, appear to
+    be neutral, according to the respective averages of 6 and 5.9.
+
+-   The youngest respondents were 21 years old and the oldest 85 years
+    old.
+
+-   41.5% of Poles surveyed have primary or lower secondary education.
+
+-   The share of non-PRP and PRP voters is rather equal here, 47.4% and
+    52.6% respectively.
+
+### The representativeness of categorical variables
+
+It is necessary to be aware of the representativeness of the categorical
+variables, as this may influence our interpretation of the model.
+
+```{r message=FALSE, warning=FALSE}
+#gay, educ, party
+gay_bar <- ggplot(df, aes ( x = `Gay/Lesbian attitudes`, fill = `Gay/Lesbian attitudes` )) + geom_bar() + scale_fill_manual(values = wes_palette(n=3, name="GrandBudapest2"))
+
+edu_bar <- ggplot(df, aes ( x = Education, fill = Education )) + geom_bar() + scale_fill_manual(values = wes_palette(n=3, name="Moonrise2"))
+
+pr_bar <- ggplot(df, aes ( x = Party_Voted, fill = Party_Voted )) + geom_bar() + scale_fill_manual(values = wes_palette(n=3, name="Rushmore1"))
+
+title_1 <- ggdraw() + draw_label("The representativeness of categorical Variables", fontface='bold')
+
+bottom_row <- plot_grid(gay_bar, pr_bar, ncol = 2, rel_widths = c(4, 4))
+plot_grid(title_1, bottom_row,edu_bar, nrow = 3,
+          rel_heights = c(0.2, 1, 1), rel_widths = c(4, 4))
+```
+
+**Result:**
+
+-   Of the three categorical variables, only the attitude towards gay
+    and lesbian freedom shows a different size group, with many more
+    Poles having a positive attitude towards gays and lesbians than
+    those with a negative or neutral attitude. We will not group neutral
+    and negative attitudes together so as not to lose an important
+    explanation. We will therefore work on all three attitudes.
+
+-   In our data, there are slightly more PRRP voters than non-PRRP
+    voters.
+
+-   The majority of our respondents have a primary or lower secondary
+    education.
+
+### Distribution of continous variables
+
+```{r message=FALSE, warning=FALSE}
+box_ie <- ggplot(df, aes(x = `Immigration - Economics`)) + geom_histogram(aes(y=..density..), position = "identity", alpha = 0.7, binwidth = 1, fill = "blue2" ) +  geom_density() 
+box_ic <- ggplot(df, aes(x = `Immigration - Culture`)) + geom_histogram(aes(y=..density..), position = "identity", alpha = 0.7, binwidth = 1, fill ="yellow2") + geom_density() 
+
+box_gl <- ggplot(df, aes(x = `Placement left/right scale`)) + geom_histogram(aes(y=..density..), position = "identity", alpha = 0.7, binwidth = 1, fill = "red2") + geom_density()
+
+box_ag <- ggplot(df, aes(x = Age)) + geom_histogram(aes(y=..density..), position = "identity", alpha = 0.7, binwidth = 1, fill="purple2") + geom_density() 
+
+title <- ggdraw() + draw_label("Distribution of our continous variables", fontface='bold')
+
+bottom_row <- plot_grid(box_ie, box_ic, ncol = 2, rel_widths = c(4, 4 ))
+last_row <- plot_grid(box_gl , box_ag, ncol = 2, rel_widths = c(4, 4 ))
+
+plot_grid(title, bottom_row,last_row , nrow = 3,
+          rel_heights = c(0.2, 1, 1), rel_widths = c(4, 4 ))
+
+
+```
+
+**Result:**
+
+-   "Immigration - Economy", "Immigration - Culture" and "Left/right
+    placement scale" are left skewed, which means that they have fewer
+    people with extremely low values. They may have potential outliers.
+
+-   Outliers in the predictor and outcome variables can strongly
+    influence the results of our model. It is recommended to be aware of
+    their presence before starting the analysis and interpretation of
+    the regression analysis.
+
+### Assumptions For Regression
+
+##### Multicollinearity
+
+In linear regression, two variables - predictors - that are highly
+correlated can cause problems in the analysis and interpretation of the
+model. This is called Multicollinearity. It is therefore necessary to
+first examine the correlations of each pair of predictor variables which
+are continuous, in our case: "Immigration - Economy", "Immigration -
+Culture", "Age". For any absolute correlation value higher than 0.8,
+meaning that the two variables are strongly related, we will be forced
+to keep only one of the two variables.
+
+```{r multicollinearity, message=FALSE, warning=FALSE}
+
+es3 = df %>% 
+  select("Immigration - Economics", "Immigration - Culture", "Age")
+cor2 = cor(es3)
+sjp.corr(es3, show.legend = TRUE, title = "Correlation Matrix")
+
+
+```
+
+**Result:** None of the correlation pairs has an absolute value greater
+than 0.8. Although the economy and cultural attitudes towards immigrants
+are highly correlated, r = 0.609, the correlation is still below the
+threshold. This allows us to use both variables for our model.
+
+#### Outcome Vs Categorical predictors
+
+Visualising the relationship betweem the outcome variable and the
+Categorical predictors can help us to get more information about their
+relationship and to detect outliers, if any.
+
+```{r message=FALSE, warning=FALSE}
+#gay, educ, party
+box_gy <- ggplot(df, aes(x = `Gay/Lesbian attitudes`, y = `Placement left/right scale`, fill = `Gay/Lesbian attitudes`))  +geom_boxplot(alpha=0.5, notch = TRUE) + theme_bw() + labs(fill = " ") + scale_fill_manual(values = wes_palette(n=3, name="GrandBudapest1"))
+
+box_ed <- ggplot(df, aes(x = Education, y = `Placement left/right scale`, fill = Education)) +geom_boxplot(alpha=0.5, notch = TRUE) + theme_bw() + labs(fill = " ") + scale_fill_manual(values = wes_palette(n=3, name="Cavalcanti1"))
+
+
+box_pv <- ggplot(df, aes(x = Party_Voted, y = `Placement left/right scale`, fill = Party_Voted)) +geom_boxplot(alpha=0.5, notch = TRUE) + theme_bw() + labs(fill = " ") + scale_fill_manual(values = wes_palette(n=3, name="IsleofDogs2"))
+
+
+title3 <- ggdraw() + draw_label("Outcome Vs Categorical predictors", fontface='bold')
+
+bottom_row <- plot_grid(box_gy, box_pv, ncol = 2, rel_widths = c(4, 4 ))
+plot_grid(title3, bottom_row,box_ed, nrow = 3,
+          rel_heights = c(0.2, 1, 1), rel_widths = c(4, 4 ))
+```
+
+**Result:**
+
+-   The relationship between the outcome variable - Left/Right Scale
+    Placements and the different predictors contains outliers. The
+    relationship Left/Right Scale Placements VS party_voted has the
+    highest number of outliers, 4. It is interesting to see that these
+    are non-RRP voters who consider themselves to be right-wing and vice
+    versa.
+
+-   There is a clear difference in the median between Poles who have a
+    positive attitude towards gays and lesbians and the others - neutral
+    or negative attitudes. This suggests that many left-wing Poles have
+    a favourable opinion of gays and lesbians. This is not surprising.
+    What is interesting is that some right-wingers have a neutral
+    opinion on the subject.
+
+-   On the basis of the median, there is no clear difference between
+    Poles of different levels of education who consider themselves to be
+    left or right wing. But there is a tendency among Poles to place
+    themselves on the right side of the scale (right-wing).
+
+#### Linear Relationship
+
+As our model is a linear regression, it assumes that all continuous
+independent variables have a linear relationship with the dependent
+variable. Any variable that has a non-linear relationship with the
+outcome variable must be excluded from the model.
+
+```{r message=FALSE, warning=FALSE}
+
+
+plt_imbgeco <- ggplot(df, aes(x = `Immigration - Economics`, y = `Placement left/right scale`, color = Party_Voted)) + geom_point() + geom_jitter() + geom_smooth (method = "lm", se = FALSE)
+
+plt_imueclt <- ggplot(df, aes(x = `Immigration - Culture`, y = `Placement left/right scale`, color = Party_Voted)) + geom_point() + geom_jitter() + geom_smooth(method = "lm", se = FALSE)
+
+plt_age <- ggplot(df, aes(x = Age, y = `Placement left/right scale`, color = Party_Voted)) + geom_point() + geom_jitter() + geom_smooth (method = "lm", se = FALSE)
+
+title <- ggdraw() + draw_label(" Relationship between the outcome and the Continous predictors", fontface='bold')
+
+bottom_row <- plot_grid(plt_imbgeco, plt_imueclt, ncol = 2, rel_widths = c(4, 4 ))
+plot_grid(title, bottom_row,plt_age, nrow = 3,
+          rel_heights = c(0.2, 1, 1), rel_widths = c(4, 4 ))
+
+
+```
+
+**Result:** - There is no non-linear relationship between the outcome
+variable and the predictor variables, even if their linearity is barely
+noticeable. It should be noted that we have added some random noise to
+make our graph easy to read since the predictors: "immigration -
+economy", "immigration - culture", and the outcome: "left/right
+placement scale" are (quasi)-interval variables. - It is a bit difficult
+to spot outliers in the scatterplot because we have added random noise.
+This forces us to use other techniques to perceive the outliers. We will
+do this later after we have run our model.
+
+### Linear Regression Analysis
+
+After checking the assumptions, most of which hold well, let's run our
+linear regression.
+
+1.  Linear regression model with one predictor
+
+First, we build a model with one predictor. Here we assess if
+Immigration - Economics predicts the Placement on the left/right scale.
+
+```{r}
+model1 <-lm(`Placement left/right scale` ~ `Immigration - Economics`, data = df)
+sjPlot::tab_model(model1)
+```
+
+-   For this model, `Immigration - Economics`(p \< 0.007) is a
+    significant predictor of the Placement on the left/right scale.
+-   The adjusted R<sup>2</sup> indicates that 0% of the variability of
+    The left/right scale scores among Poles can be explained by our
+    model. It is indeed very low.
+
+2.  Linear regression model with two predictors
+
+We add to our previous model another variable: `Immigration - Culture`
+as predictor of the the left/right scale.
+
+```{r}
+model2 <-lm(`Placement left/right scale` ~ `Immigration - Economics` + `Immigration - Culture`, data = df)
+sjPlot::tab_model(model2)
+```
+
+-   For this model, Immigration - Culture(p \< 0.001) is a significant
+    predictor of the Placement on the left/right scale. Immigration -
+    Economics is not a significant predictor of the outcome.
+-   The adjusted R<sup>2</sup> indicates that 4% of the variability of
+    the left/right scale scores among Poles can be explained by our
+    model. It is still very low.
+
+3.  Linear regression model with three predictors
+
+We add to our previous model a third variable: Age as predictor of the
+the left/right scale.
+
+```{r}
+model3 <-lm(`Placement left/right scale` ~ `Immigration - Economics` + `Immigration - Culture` + Age , data = df)
+sjPlot::tab_model(model3)
+```
+
+-   For this model, Immigration - Culture(p \< 0.001) is a significant
+    predictor of the Placement on the left/right scale. Immigration -
+    Economics and Age are not a significant predictor of the outcome.
+-   The adjusted R<sup>2</sup> indicates that 4,8% of the variability of
+    the left/right scale scores among Poles can be explained by our
+    model. It is still very low.
+
+4.  Linear regression model with Four predictors
+
+We add to our previous model a fourth variable: `Gay/Lesbian attitudes`
+as predictor of the the left/right scale.
+
+```{r}
+model4 <-lm(`Placement left/right scale` ~ `Immigration - Economics` + `Immigration - Culture` + Age + `Gay/Lesbian attitudes` , data = df)
+sjPlot::tab_model(model4)
+```
+
+-   For this model, Immigration - Culture(p \< 0.001) and positive
+    attitudes towards gay and lesbian freedom (P \< 0.001) are
+    significant predictors of the Placement on the left/right scale.
+    Immigration - Economics, Age, and the neutral attitudes towards gay
+    and lesbian freedom are not a significant predictors of the outcome.
+-   The adjusted R<sup>2</sup> indicates that 11.6% of the variability
+    of the left/right scale scores among Poles can be explained by our
+    model. It is above the threshold of 10% meaning that the model has a
+    satisfactory predictive power.
+
+5.  Linear regression model with Five predictors
+
+We add to our previous model a fifth variable: Party_Voted as predictor
+of the the left/right scale.
+
+```{r}
+model5 <-lm(`Placement left/right scale` ~ `Immigration - Economics` + `Immigration - Culture` + Age + `Gay/Lesbian attitudes` + Party_Voted , data = df)
+sjPlot::tab_model(model5)
+```
+
+-   For this model, Immigration - Economics (p \< 0.002), Immigration -
+    Culture(p \< 0.038), positive attitudes towards gay and lesbian
+    freedom (P \< 0.001), and the party, PRRP or not, for which a Pole
+    voted in the last election (P \< 0.001) are significant predictors
+    of the Placement on the left/right scale. Age, and the neutral
+    attitudes towards gay and lesbian freedom are not a significant
+    predictors of the outcome.
+-   The adjusted R<sup>2</sup> indicates that 38.2% of the variability
+    of the left/right scale scores among Poles can be explained by our
+    model. It is far above the threshold of 10% meaning that the model
+    has a good predictive power.
+
+6.  Linear regression model with six predictors
+
+We add to our previous model a sixth variable: Education as predictor of
+the the left/right scale.
+
+```{r message=FALSE, warning=FALSE}
+model6 <- lm(`Placement left/right scale` ~ `Immigration - Economics` + `Immigration - Culture` + Age + `Gay/Lesbian attitudes` + Party_Voted + Education , data = df)
+sjPlot::tab_model(model6)
+```
+
+-   For this model, Immigration - Economics (p \< 0.002), Immigration -
+    Culture(p \< 0.038), positive attitudes towards gay and lesbian
+    freedom (P \< 0.001), and the party, PRRP or not, for which a Pole
+    voted in the last election (P \< 0.001) are significant predictors
+    of the Placement on the left/right scale. Age, the neutral attitudes
+    towards gay and lesbian freedom, and the University level of Poles
+    are not a significant predictors of the outcome.
+-   The adjusted R<sup>2</sup> indicates that 38.2% of the variability
+    of the left/right scale scores among Poles can be explained by our
+    model. It is far above the threshold of 10% meaning that the model
+    has a good predictive power.
+
+#### Model Fit
+
+To further with our analysis of the predictors of placement on the
+left/right scale, we need to select the best-fitting model. To do this,
+we use the Akaike Information Criterion - AIC and the Bayesian
+Information Criterion - BIC. These are measures of goodness of fit used
+for model selection. The model with the lowest AIC and BIC score is the
+one with the best fit.
+
+```{r message=FALSE, warning=FALSE}
+
+Model <- c("Model1", "Model2", "Model3", "Model4", "Model5", "Model6")
+AIC <- c(AIC(model1), AIC(model2), AIC(model3), AIC(model4), AIC(model5), AIC(model6) )
+BIC <- c(BIC(model1), BIC(model2), BIC(model3), BIC(model4), BIC(model5), BIC(model6) )
+df_val <- data.frame(Model, AIC, BIC, stringsAsFactors = FALSE)  
+kable(df_val) %>% 
+  kable_styling(bootstrap_options=c("bordered", "responsive","striped"), full_width = FALSE)
+
+```
+
+**Result:** The model 5 is the one with lowest AIC and BIC score
+2938.781 and 2974.899 respectively. Thus it is the model we will
+interpret.
+
+#### Interpretation of The Model
+
+**Significant Predictors:** According to the results of the model,
+economic attitudes towards immigration (p \< 0.002), cultural attitudes
+towards immigration (P \< 0.038), positive attitudes towards gay and
+lesbian freedom (P \< 0.001) and the party, PRRP or not, for which a
+Pole voted in the last election (P \< 0.001) are all significant
+predictors of individuals' subjective positions on the left-hand scale.
+
+-   The regression equation is:
+
+**Placement left/right scale = 0.14\*(Immigration - Economics)
+-0.09\*(Immigration - Culture) -0.76\*(Gay/Lesbian attitudes[Positive])
++3.02\*(Party Voted [PRRP])**
+
+**Explaining non-significant results:**
+
+-   The subjective placement on the left/right scale do not increase or
+    decrease as a Poles get older.
+
+-   Among Poles, those with a neutral attitude towards gays and lesbians
+    score 0.15 points lower on the subjective left/right scale than
+    those with a negative attitude.
+
+**Explaining significant results:**
+
+-   Among Poles, each additional score in economic attitudes towards
+    immigrants is associated with an increase in self-positioning in the
+    left/right scale by 0.14 score.
+
+-    Among Poles, each increase by one score in the cultural attitude
+    towards immigrants is associated with a decrease in self-positioning
+    on the left/right scale by 0.09 points.
+
+-    Among Poles, those with a positive attitude towards gays and
+    lesbians score 0.8 points lower on the subjective left/right scale
+    than those with a negative attitude.
+
+-    Among Poles, PRRP voters score 3.02 points higher on the subjective
+    left/right scale than non-PRRP voters.
+
+**Interpreting the Overall R**<sup>2</sup>: As the
+R<sup>2</sup>increases with the independent variables (which could be
+biased), we use the adjusted R<sup>2</sup> which indicates that 38.3% of
+the variability of the left/right scale scores among Poles can be
+explained by our model. Which is good, and above the threshold of 10%.
+
+### Checking Assumptions (Yes, Again!)
+
+#### Collinearity
+
+We will calculate variance inflation factors to determine whether any of
+our predictors are redundant or not. If a predictor's VIF score is
+greater than 10, it should be excluded from our model. The VIF score
+should be close to 1.
+
+```{r message=FALSE, warning=FALSE}
+
+kable(vif(model5))%>% 
+  kable_styling(bootstrap_options=c("bordered", "responsive","striped"), full_width = FALSE)
+```
+
+**Result:** The VIF score of all significant predictors and the rest of
+the predictors is close to one, which means that none of the variables
+are redundant.
+
+#### the assumption of normality, homoscedasticity
+
+Here we run the *diagnostic plots* which will help us to check our
+assumptions
+
+```{r message=FALSE, warning=FALSE}
+autoplot(model5, colour = "Party_Voted") 
+```
+
+**Result:**
+
+-   The Q-Q graph shows that the normal probability curve of the
+    residuals follows approximately the straight line. Normality can
+    therefore be assumed.
+
+-    The horizontal line on the Residuals Vs Fitted plot indicates that
+    the variances are evenly distributed among the points, which
+    indicates a constant variance in the residual errors, hence
+    homoscedasticity.
+
+#### Influential Outliers(No, We haven't forgotten them)
+
+We need to check whether the outliers are influential or not for our
+model, i.e. whether their inclusion or exclusion has larger effects on
+the model. To check whether an observation is influential or not, we
+will use the Cook distance. Thus, the observation with the highest
+laverage value and the highest residuals will be considered as
+influential in our model.
+
+```{r message=FALSE, warning=FALSE}
+cook_d <- model5 %>%
+  augment() %>%
+  arrange(desc(.cooksd)) %>%
+  head() %>%
+  select(Party_Voted, .resid, .hat, .cooksd)
+
+kable(cook_d )%>% 
+  kable_styling(bootstrap_options=c("bordered", "responsive","striped"), full_width = FALSE)
+```
+
+**Result:** Although the observation with the highest Cook distance has
+a higher absolute residual value, it does not have a higher Leverage
+value, which means that it is not influential. In addition, the Leverage
+Vs residuals plot on the diagnostic plots do not show the Cook distance
+lines (a red dashed line) because all observations fit well within the
+Cook distance lines.
+
+### Reporting Regression
+
+In this section we carried out a multiple linear regression to analyse
+among Poles respondents the relationship between their Economics and
+Culture attitudes towards immigration, attitude towards sexual
+minorities, Age, and whether their vote for a populist radical right
+parties (PRRP) and the placement on the left/right scale. There was a
+significant relationship between economics attitude towards immigration
+and the placement on the left/right scale p(\<0.002), cultural attitude
+towards immigration and the placement on the left/right scale p(0.038),
+Positive attitude towards sexual minorities and the placement on the
+left/right scale p(\<0.001) and Party voted for at the last election and
+the placement on the left/right scale p(\<0.001). For the cultural
+attitude each extra score lead the Poles to increase their position by
+0.14 on the left/right scale. Among Poles, each additional score in
+economic attitudes towards immigrants is associated with an increase in
+self-positioning in the left/right scale by 0.14 score. Those with a
+positive attitude towards gays and lesbians score 0.8 points lower on
+the subjective left/right scale than those with a negative attitude (i.e
+that they are left-wingers), and PRRP voters score 3.02 points higher on
+the subjective left/right scale than non-PRRP voters (i.e that they are
+right-wingers). The adjusted R<sup>2</sup> was 0.382 which indicates that 38.3% of the variability in left/right scale scores among Poles can be explained by our model containing economic attitudes towards immigrants, cultural attitudes towards immigrants, positive attitudes towards sexual minorities and the party the respondent voted for in the last election. Our data satisfied the assumptions of homogeneity of variance and linearity, with normally distributed residuals.
+
+## Correlation analysis
+For practical issues, as we will have another project(s) on regression analysis, we decided to choose 3 other variables for the current correlation analysis which are not used in the current regression analysis, so that we may have some ideas for further regression analyses.
+
+We know that right-wing voters tend to be anti-globalists in contrast to other voters (e.g., see Rensmann, 2011), and that "anti-globalism attacks what is perceived as a larger ideology of globalism that allegedly promotes free trade as well as cultural and racial mixing" (Voelz, 2017, p. 521). So, it would be interesting for us, who study right parties voters' attitudes towards immigrants (with a culture different from countries' one) in Poland, to check if is this a case for current Poland, since it may help us to decide next time which variables to use in further regression analysis.
+
+We propose to choose three variables related to possible anti-globalist attitudes: "Trust in the European Parliament", "Trust in the United Nations", "European Union: European unification go further or gone too far". (They are not direct measures of general anti-globalist attitudes, but should give an estimate because these are attitudes related to organizations of the supranational level aimed to countries' integration: European in case of European Union, and across the globe in case of United Nations.)
+
+**Research Hypotheses:**
+
+Following the literature mentioned above—especially Rensmann (2011)—we hypothesize that Poland follows a general trend for European countries, and:
+
+- **H1**. Placement on left-right scale will strongly negatively correlate with the answer for "European Union: European unification go further or gone too far" (remember that 0 — radical lefts, 10 — radical rights, while  we have for the question  0 as "Unification already gone too far" and 10 as "Unification go further").
+- **H2**. Placement on left-right scale will strongly negatively correlate with 'Trust in the European Parliament' (remember that 0 — radical lefts, 10 — radical rights, while for trust we have 0 as "No trust at all" and 10 as "Complete trust").
+- **H3**. Placement on left-right scale will strongly negatively correlate with 'Trust in the United Nations' (remember that 0 — radical lefts, 10 — radical rights, while for trust we have 0 as "No trust at all" and 10 as "Complete trust").
+
+### Data for analysis
+
+Here we select the variables needed to run our test, transform them, and describe them.
+
+```{r message=FALSE, warning=FALSE}
+coranalvars <- ersur %>% select(lrscale,  euftf, trstep, trstun) %>% 
+  filter(!is.na(lrscale), !is.na(euftf), !is.na(trstep), !is.na(trstun))
+
+coranalvars$lrscale_1 <- as.numeric(coranalvars$lrscale) - 1
+
+coranalvars$euftf_1 <- as.numeric(coranalvars$euftf) - 1 
+coranalvars$trstep_1 <- as.numeric(coranalvars$trstep) - 1
+coranalvars$trstun_1 <- as.numeric(coranalvars$trstun) - 1
+
+Label <- c("lrscale_1", "euftf_1 ", "trstep_1", "trstun_1")
+
+Meaning <- c("Placement on left/right scale","European Union: European unification go further or gone too far", "Trust in the European Parliament", "Trust in the United Nations")
+
+Level_Of_Measurement <- c("(Quasi-)Interval","(Quasi-)Interval", "(Quasi-)Interval", "(Quasi-)Interval")
+
+R_Data_Type <- c(class(coranalvars$lrscale_1),class(coranalvars$euftf_1), class(coranalvars$trstep_1), class(coranalvars$trstun_1))
+
+coranalvars_val <- data.frame(Label, Meaning, Level_Of_Measurement, R_Data_Type, stringsAsFactors = FALSE)
+
+kable(coranalvars_val) %>% 
+  kable_styling(bootstrap_options=c("bordered", "responsive","striped"), full_width = FALSE)  
+```
+
+#### Descriptive statistics of our variables.
+
+```{r message=FALSE, warning=FALSE}
+statsforcorr <- coranalvars %>% select(lrscale_1, euftf_1, trstep_1, trstun_1)
+sumtable(statsforcorr, out = 'kable') %>% 
+  kable_styling(bootstrap_options=c("bordered", "responsive","striped"), full_width = FALSE)
+
+```
+
+**Important Comments:**
+
+- There are 1097 observations in this subset.
+- Poles tend to be slightly more right ones.
+- Poles tend to be slightly more pro Euro-integration (surprisingly! The value 6.131 when we have 0 as "Unification already gone too far" and 10 as "Unification go further").
+- Poles tend to have rather neutral views on Euro Parliament (medium trust 4.848).
+- Poles tend to be slightly more trustful for United Nations (slightly more than medium trust 5.618).
+- Poles are more trustful for United Nations than for Euro Parliament.
+
+### Distribution of continous variables
+
+```{r message=FALSE, warning=FALSE}
+box_1 <- ggplot(coranalvars, aes(x = lrscale_1)) + geom_histogram(aes(y=..density..), position = "identity", alpha = 0.7, binwidth = 1, fill = "blue2" ) +  geom_density() 
+
+box_2 <- ggplot(coranalvars, aes(x = euftf_1)) + geom_histogram(aes(y=..density..), position = "identity", alpha = 0.7, binwidth = 1, fill ="yellow2") + geom_density() 
+
+box_3 <- ggplot(coranalvars, aes(x = trstep_1)) + geom_histogram(aes(y=..density..), position = "identity", alpha = 0.7, binwidth = 1, fill = "red2") + geom_density()
+
+box_4 <- ggplot(coranalvars, aes(x = trstun_1)) + geom_histogram(aes(y=..density..), position = "identity", alpha = 0.7, binwidth = 1, fill="purple2") + geom_density() 
+
+title <- ggdraw() + draw_label("Distribution of our continous variables for correlation analysis", fontface='bold')
+
+bottom_row <- plot_grid(box_1, box_2, ncol = 2, rel_widths = c(4, 4 ))
+last_row <- plot_grid(box_3 , box_4, ncol = 2, rel_widths = c(4, 4 ))
+
+plot_grid(title, bottom_row,last_row , nrow = 3,
+          rel_heights = c(0.2, 1, 1), rel_widths = c(4, 4 ))
+```
+**Conclusions:**
+
+Looking at the distributions of all variables, we see deviations from normality—from slight deviations (trstep_1) to really crucial ones (euftf_1). As such, the normality assumption for Pearson's Product-Moment Correlation generally is not met, we thus will use Spearman's Correlation.
+
+### Testing H1:
+```{r}
+cor.test(coranalvars$lrscale_1, coranalvars$euftf_1, method = "spearman")
+
+library(ggpubr)
+ggscatter(coranalvars, x = "lrscale_1", y = "euftf_1", 
+          add = "reg.line", 
+          cor.coef = TRUE, 
+          cor.method = "spearman",
+          xlab = "Placement on left/right scale", 
+          ylab = "European Union: European unification go further or gone too far")
+```
+**Conclusion:**
+There is significant (p < 0.01) yet small negative correlation (coefficient R = -0.21) between "Placement on left-right scale" and the answer to the question "European Union: European unification go further or gone too far". As such, **H1** is partially supported.
+
+### Testing H2:
+```{r}
+cor.test(coranalvars$lrscale_1, coranalvars$trstep_1, method = "spearman")
+
+library(ggpubr)
+ggscatter(coranalvars, x = "lrscale_1", y = "trstep_1", 
+          add = "reg.line", 
+          cor.coef = TRUE, 
+          cor.method = "spearman",
+          xlab = "Placement on left/right scale", 
+          ylab = "Trust in the European Parliament")
+```
+**Conclusion:**
+There is a significant (p < 0.01) yet small (coefficient R = -0.12) negative correlation between "Placement on left-right scale" and "Trust in the European Parliament". As such, **H2** is partially supported.
+
+### Testing H3:
+```{r}
+cor.test(coranalvars$lrscale_1, coranalvars$trstun_1, method = "spearman")
+
+library(ggpubr)
+ggscatter(coranalvars, x = "lrscale_1", y = "trstun_1", 
+          add = "reg.line", 
+          cor.coef = TRUE, 
+          cor.method = "spearman",
+          xlab = "Placement on left/right scale", 
+          ylab = "Trust in the United Nations")
+```
+
+**Conclusion:**
+There is no correlation between "Placement on left/right scale" and "Trust in the United Nations". As such, **H3** is not supported at all.
+
+### Correlation matrix
+
+```{r}
+tab_corr(statsforcorr, 
+         corr.method = "spearman")
+```
+
+**Conclusion:**
+From 3 correlations, only 2 are significant (lrscale_1 ~ euftf_1; lrscale_1 ~ trstep_1) while 1 is not (lrscale_1 ~ trstun_1). Both are negative and small. The correlation between lrscale_1 and euftf_1 is the highest one (-0.212).
+
+### Overall conclusion for the correlation analysis
+Given the fact that **H1** and **H2** are only partially supported while **H3** is not supported at all, we may conclude that we overestimated in our hypotheses the magnitude of the relationship between placement on left-right scale and proxies for anti-globalist attitudes. There is a chance that politically right-placed Poles are not concerned about anti-globalizm at all, and they just simply are against only European Union as a particular political union. Maybe, as such, there will be no strong association between anti-globalist attitudes and placement on left-rights scale, opposite to the current literature; currently, we do not know it. But this is a good result for us in terms of future projects as we have at least one new idea to check!
+
+## Literature
+* Cordero, G., Zagórski, P., & Rama, J. (2021). Give Me Your Least Educated: Immigration, Education and Support for Populist Radical Right Parties in Europe. Political Studies Review, 14789299211029110.
+* Inglehart, R., & Norris, P. (2017). Trump and the populist authoritarian parties: the silent revolution in reverse. Perspectives on Politics, 15(2), 443-454.
+* Kehrberg, J. (2015). The Demand Side of Support for Radical Right Parties. Comparative European Politics, 13(5), 553–76.
+* Rensmann, L. (2011). “Against Globalism”: Counter-Cosmopolitan Discontent and Antisemitism in Mobilizations of European Extreme Right Parties. In Politics and Resentment (pp. 117-146). Brill.
+* Voelz, J. (2017). Transnationalism and anti-globalism. College Literature, 44(4), 521-526.
